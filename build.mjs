@@ -9,7 +9,21 @@ if (!ID || !SECRET) throw new Error('Missing EBAY_CLIENT_ID or EBAY_CLIENT_SECRE
 // By default EVERY card in the category shows (Pokemon, Magic, One Piece, etc.).
 // Set POKEMON_ONLY=1 to hide other card games using the keyword list below.
 const POKEMON_ONLY = process.env.POKEMON_ONLY === '1';
-const NON_POKEMON = /Magic:? The Gathering|\bMTG\b|Naruto|Kayou|Yu-?gi-?oh|Riftbound|Dragon Ball|\bDBS\b|Teenage Mutant|Spider-Man|Marvel|Hobbit|One Piece|Saikyo Jump|Gundam|Lorcana|Digimon|Union Arena/i;
+const GAME_RULES = [
+  ['Pokémon', /pok[eé]mon/i],
+  ['Magic', /Magic:? The Gathering|MTG|Teenage Mutant|Spider-Man|Marvel|Hobbit|Lord of the Rings/i],
+  ['One Piece', /One Piece|Saikyo Jump/i],
+  ['Yu-Gi-Oh', /Yu-?gi-?oh/i],
+  ['Dragon Ball', /Dragon Ball|DBS/i],
+  ['Naruto', /Naruto|Kayou/i],
+  ['Gundam', /Gundam/i],
+  ['Lorcana', /Lorcana/i],
+  ['Digimon', /Digimon/i],
+  ['Union Arena', /Union Arena/i],
+  ['Riftbound', /Riftbound/i],
+];
+// Titles that match no other game are filed under Pokémon (your main game).
+const gameOf = t => (GAME_RULES.find(([, re]) => re.test(t)) || ['Pokémon'])[0];
 const GRADE = /\b(PSA|BGS|CGC|TAG|SGC|ACE)\s*(\d+(?:\.\d)?)/i;
 const TITLE_COND = /Near Mint|Lightly Played|Moderately Played|Heavily Played|Damaged|\b(?:NM|LP|MP|HP)\b/;
 const SPELL = { NM: 'Near Mint', LP: 'Lightly Played', MP: 'Moderately Played', HP: 'Heavily Played' };
@@ -27,11 +41,10 @@ async function getToken() {
   return (await r.json()).access_token;
 }
 
-async function pullAll(token) {
-  const items = new Map();
+async function pullPass(token, sort, items) {
   let offset = 0, total = Infinity;
   while (offset < total && offset < 10000) {
-    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?category_ids=2536&filter=sellers:%7B${SELLER}%7D&limit=200&offset=${offset}`;
+    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?category_ids=2536&filter=sellers:%7B${SELLER}%7D&limit=200&offset=${offset}&sort=${sort}`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' } });
     if (!r.ok) throw new Error(`Search failed at offset ${offset}: ${r.status} ${await r.text()}`);
     const j = await r.json();
@@ -41,12 +54,24 @@ async function pullAll(token) {
     for (const i of list) items.set(i.itemId, i);
     offset += 200;
   }
+  return total;
+}
+
+// eBay's paging can skip or repeat listings when many are tied (e.g. hundreds at $0.99),
+// so we pull in three different orders and merge by item ID to catch any that slip through.
+async function pullAll(token) {
+  const items = new Map();
+  let total = 0;
+  for (const sort of ['newlyListed', 'price', '-price']) {
+    total = Math.max(total, await pullPass(token, sort, items));
+    console.log(`Pass ${sort}: ${items.size} unique listings so far`);
+  }
   return { list: [...items.values()], total };
 }
 
 function toCard(i) {
   const name = i.title || '';
-  if (POKEMON_ONLY && NON_POKEMON.test(name)) return null;
+  if (POKEMON_ONLY && gameOf(name) !== 'Pokémon') return null;
   const price = Number(i.price?.value);
   if (!Number.isFinite(price)) return null;
   const graded = i.condition === 'Graded';
@@ -62,7 +87,7 @@ function toCard(i) {
   const id = i.legacyItemId || String(i.itemId).split('|')[1];
   const small = i.image?.imageUrl || '';
   return {
-    id, zone, name, condition, price,
+    id, zone, name, condition, price, game: gameOf(name),
     image: small.replace(/s-l\d+/, 's-l500'),
     imageLarge: i.thumbnailImages?.[0]?.imageUrl || small,
     url: `https://www.ebay.com/itm/${id}`,
@@ -82,6 +107,12 @@ if (raw.length < 50 || cards.length < 50) throw new Error(`Only ${raw.length} li
 const counts = {};
 for (const c of cards) counts[c.zone] = (counts[c.zone] || 0) + 1;
 console.log('Zones:', counts);
+const gc = {}; for (const c of cards) gc[c.game] = (gc[c.game] || 0) + 1;
+console.log('Games:', gc);
+const guess = cards.filter(c => c.game === 'Pokémon' && !/pok[eé]mon/i.test(c.name));
+console.log(`Filed under Pokémon without the word in the title: ${guess.length}`);
+for (const c of guess.slice(0, 15)) console.log('  GUESS:', c.name);
+for (const c of cards) if (c.zone !== 'slabs' && GRADE.test(c.name)) console.log(`CHECK looks graded but sits in ${c.zone}: ${c.id} ${c.name} [${c.condition}]`);
 
 const json = JSON.stringify(cards);
 const template = await readFile(new URL('./index.template.html', import.meta.url), 'utf8');
