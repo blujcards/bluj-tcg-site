@@ -79,6 +79,9 @@ button,a,.hs,.card,select{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://ww
 @keyframes flN{from{transform:perspective(900px) rotateY(-70deg);opacity:.3}to{transform:none;opacity:1}}
 @keyframes flP{from{transform:perspective(900px) rotateY(70deg);opacity:.3}to{transform:none;opacity:1}}
 @media(prefers-reduced-motion:reduce){.pg.nx,.pg.pv{animation:none}}
+.binder{perspective:1400px}.lf{position:absolute;transform-style:preserve-3d;pointer-events:none;z-index:2}
+.fc{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;box-shadow:0 0 16px rgba(0,0,0,.45)}.fc.b{transform:rotateY(180deg)}
+.pg.empty{background:#141c47}
 </style></head><body>
 <header><h1>BluJ TCG</h1><span><button id="mu" aria-label="Toggle sound">🔊</button> <button data-z="c">View entire catalog</button></span></header>
 <div id="scene" class="tips">
@@ -122,19 +125,27 @@ const opt=(v,t,cur)=>`<option value="${v}" ${v==cur?'selected':''}>${t}</option>
 const ctls=(zl,s,tabs,bin)=>`<div class="${tabs?'tabs':'chips'}" id="gt">${(tabs?[]:[['All',zl.length]]).concat(gamesOf(zl)).map(([g,n])=>`<button data-g="${g}" class="${s.g==g?'on':''}">${g} <small>${n}</small></button>`).join('')}</div><div class="ctl"><input id="q" type="search" placeholder="Search Pokémon, set, or card" value="${s.q}"><select id="cd">${opt('All','All conditions',s.cd)}${[...new Set(zl.map(c=>c.cond))].sort().map(v=>opt(v,v,s.cd)).join('')}</select><select id="so">${opt('hi','Price: high to low',s.so)}${opt('lo','Price: low to high',s.so)}${opt('az','Name: A to Z',s.so)}${bin?opt('shuffle','Shuffled',s.so):''}</select>${bin?'<button id="sh">Shuffle</button>':''}</div>`;
 const wire=(s,go)=>{let t;$('#gt').onclick=e=>{const b=e.target.closest('button');if(!b)return;s.g=b.dataset.g;document.querySelectorAll('#gt button').forEach(x=>x.classList.toggle('on',x==b));go()};$('#q').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{s.q=e.target.value.trim().toLowerCase();go()},150)};$('#cd').onchange=e=>{s.cd=e.target.value;go()};$('#so').onchange=e=>{s.so=e.target.value;go()}};
 V.b=()=>{T.textContent='Bargain Binders';const gs=gamesOf(D.b),s={g:gs.length?gs[0][0]:'All',q:'',cd:'All',so:'hi'},rk=new Map(),shuf=()=>D.b.forEach(c=>rk.set(c.id,rnd()));shuf();
-let list=[],pg=0;const per=()=>innerWidth<700?9:18,pages=()=>Math.max(1,Math.ceil(list.length/per()));
+let list=[],pi=0,busy=false,tok=0;const desk=()=>innerWidth>=700,N=()=>Math.max(1,Math.ceil(list.length/9));
+const cards=i=>list.slice(i*9,i*9+9).map(pk).join(''),pgh=(i,x='')=>i>=0&&i<N()&&list.length?`<div class="pg ${x}">${cards(i)}</div>`:`<div class="pg empty ${x}"></div>`;
 const calc=()=>{list=flt(D.b,s).sort(s.so=='shuffle'?(a,b)=>rk.get(a.id)-rk.get(b.id):SORTS[s.so])};
-const draw=dir=>{const p=per(),n=pages();pg=Math.min(Math.max(0,pg),n-1);const c=list.slice(pg*p,pg*p+p),d=dir>0?' nx':dir<0?' pv':'',bd=$('#bd');bd.className='binder'+(p>9?'':' one');
-bd.innerHTML=list.length?`<div class="pg${d}">${c.slice(0,9).map(pk).join('')}</div>${p>9?`<div class="pg${d}">${c.slice(9).map(pk).join('')}</div>`:''}`:'<p class="sm">Nothing matches. Try another tab or clear the search.</p>';
-$('#nv').innerHTML=`<button id="pv" ${pg?'':'disabled'}>Prev</button><span>Page <input id="jp" type="number" min="1" max="${n}" value="${pg+1}"> of ${n}</span><button id="nx" ${pg<n-1?'':'disabled'}>Next</button>`;
-$('#pv').onclick=()=>turn(-1);$('#nx').onclick=()=>turn(1);$('#jp').onchange=e=>{const t=Math.min(n,Math.max(1,+e.target.value||1))-1,dd=Math.sign(t-pg);swipeSeen=true;pg=t;draw(dd)}};
-const turn=n=>{const t=pg+n;if(t<0||t>=pages())return;swipeSeen=true;pg=t;draw(n);const w=$('#sw');if(w)w.remove()};
-const go=()=>{pg=0;calc();draw(0)};
+const nav=()=>{const n=N(),d=desk(),a=pi+1,b=Math.min(pi+2,n);$('#nv').innerHTML=`<button id="pv" ${pi?'':'disabled'}>Prev</button><span>${d?'Pages':'Page'} <input id="jp" type="number" min="1" max="${n}" value="${a}">${d&&b>a?' – '+b:''} of ${n}</span><button id="nx" ${pi+(d?2:1)<n?'':'disabled'}>Next</button>`;
+$('#pv').onclick=()=>turn(-1);$('#nx').onclick=()=>turn(1);$('#jp').onchange=e=>{tok++;busy=false;pi=Math.min(n,Math.max(1,+e.target.value||1))-1;swipeSeen=true;draw()}};
+const draw=()=>{const d=desk();if(d)pi-=pi%2;pi=Math.max(0,Math.min(pi,N()-1));const bd=$('#bd');bd.className='binder'+(d?'':' one');bd.innerHTML=list.length?pgh(pi)+(d?pgh(pi+1):''):'<p class="sm">Nothing matches. Try another tab or clear the search.</p>';nav()};
+const turn=dir=>{if(busy||!list.length)return;const d=desk(),t=pi+dir*(d?2:1);if(t<0||t>=N())return;swipeSeen=true;const w=$('#sw');if(w)w.remove();
+if(matchMedia('(prefers-reduced-motion:reduce)').matches){pi=t;draw();return}
+const bd=$('#bd'),F=dir>0;let under,front,back;
+if(d){under=F?pgh(pi)+pgh(pi+3):pgh(pi-2)+pgh(pi+1);front=F?pgh(pi+1,'fc'):pgh(pi-1,'fc');back=F?pgh(pi+2,'fc b'):pgh(pi,'fc b')}
+else{under=F?pgh(pi+1):pgh(pi);front=F?pgh(pi,'fc'):pgh(pi-1,'fc');back='<div class="pg empty fc b"></div>'}
+bd.innerHTML=under;const ps=bd.querySelectorAll('.pg'),r=ps[ps.length-1],lf=document.createElement('div');lf.className='lf';
+lf.style.cssText=`left:${r.offsetLeft}px;top:${r.offsetTop}px;width:${r.offsetWidth}px;height:${r.offsetHeight}px;transform-origin:${d?bd.clientWidth/2-r.offsetLeft:0}px 50%;transform:rotateY(${F?0:-180}deg)`;
+lf.innerHTML=front+back;bd.appendChild(lf);busy=true;const my=++tok;
+lf.animate(F?[{transform:'rotateY(0deg)'},{transform:'rotateY(-180deg)'}]:[{transform:'rotateY(-180deg)'},{transform:'rotateY(0deg)'}],{duration:650,easing:'cubic-bezier(.45,.05,.3,1)',fill:'forwards'}).onfinish=()=>{if(my!==tok)return;busy=false;pi=t;draw()}};
+const go=()=>{tok++;busy=false;pi=0;calc();draw()};
 B.innerHTML=`${ctls(D.b,s,1,1)}${swipeSeen?'':'<div class="tipb" id="sw"><span>Swipe left or right to turn the page. On a computer, use Prev and Next or the arrow keys.</span><button id="swx">Got it</button></div>'}<div class="binder" id="bd"></div><div class="nav" id="nv"></div>`;
 wire(s,go);$('#sh').onclick=()=>{shuf();s.so='shuffle';$('#so').value='shuffle';go()};if($('#swx'))$('#swx').onclick=()=>{swipeSeen=true;$('#sw').remove()};
-let x0,y0;const bd=$('#bd');bd.ontouchstart=e=>{x0=e.touches[0].clientX;y0=e.touches[0].clientY};bd.ontouchend=e=>{const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;if(Math.abs(dx)>50&&Math.abs(dx)>1.5*Math.abs(dy))turn(dx<0?1:-1)};
+let x0,y0;const bd0=$('#bd');bd0.ontouchstart=e=>{x0=e.touches[0].clientX;y0=e.touches[0].clientY};bd0.ontouchend=e=>{const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;if(Math.abs(dx)>50&&Math.abs(dx)>1.5*Math.abs(dy))turn(dx<0?1:-1)};
 document.onkeydown=e=>{if(/INPUT|SELECT/.test(e.target.tagName))return;if(e.key=='ArrowRight')turn(1);if(e.key=='ArrowLeft')turn(-1)};
-calc();draw(0)};
+calc();draw()};
 const zone=(z,title,fe)=>{T.textContent=title;const zl=D[z],s={g:'All',q:'',cd:'All',so:'hi'};let lim=96;const wrap=h=>z=='t'?h:`<div class="case">${h}</div>`;
 const draw=()=>{const l=flt(zl,s),act=s.g!='All'||s.q||s.cd!='All',top=!act&&fe?[...zl].sort(hi).slice(0,fe):[],fs=new Set(top.map(c=>c.id));let h='';
 if(top.length)h+=`<h3>Featured</h3><p class="sm">Top ${top.length} by price for now.</p>${wrap(grid(top,fe>6?'grid g4':'grid g3'))}`;
